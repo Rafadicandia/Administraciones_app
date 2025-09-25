@@ -1,89 +1,357 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <base target="_top">
-    <style>
-      /* Estilos para que se vea bien */
-      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 20px; }
-      h1 { color: #333; text-align: center; }
-      #loader { text-align: center; font-size: 1.2em; color: #555; }
-      #vencimientos-container { visibility: hidden; }
-      table { width: 100%; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); }
-      th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
-      thead { background-color: #007bff; color: white; }
-      tr:nth-child(even) { background-color: #f2f2f2; }
-      tr:hover { background-color: #e2eefd; }
-      .estado-vencido { font-weight: bold; color: #d9534f; }
-      .estado-proximo { font-weight: bold; color: #f0ad4e; }
-    </style>
-  </head>
-  <body>
-    <h1>Control de Próximos Vencimientos</h1>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestor de Vencimientos</title>
+  <!-- Se utiliza el framework de CSS Pico.css para un diseño limpio y rápido -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+  <style>
+    :root { 
+      --font-size: 16px; 
+      --primary: #007bff;
+    }
+    body { padding: 20px; background-color: #f4f7f6; }
+    main.container { max-width: 1000px; }
+    #loader { text-align: center; padding: 40px; }
+    .grid { display: grid; grid-template-columns: 1fr auto; gap: 20px; }
+    dialog header { display: flex; justify-content: space-between; align-items: center; }
+    dialog h5 { margin: 0; }
+    article { margin-bottom: 2rem; }
+    table { margin-top: 1rem; }
+    #property-details-container {
+        border: 1px solid var(--contrast);
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin-top: 1.5rem;
+    }
+    button[aria-busy="true"] {
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header style="text-align: center; margin-bottom: 2rem;">
+      <h1>Gestor de Vencimientos</h1>
+      <p>Un panel central para el seguimiento de propiedades y sus vencimientos.</p>
+    </header>
 
-    <div id="loader">Cargando vencimientos... ⏳</div>
-
-    <div id="vencimientos-container">
-      <table>
+    <!-- Sección del Dashboard de Próximos Vencimientos -->
+    <article id="dashboard">
+      <header>
+        <strong>Próximos Vencimientos (30 días)</strong>
+      </header>
+      <div id="dashboard-loader" aria-busy="true">Cargando vencimientos próximos...</div>
+      <table role="grid" id="vencimientos-proximos-table" style="display:none;">
         <thead>
           <tr>
             <th>Padrón</th>
-            <th>Concepto</th>
-            <th>Propietario</th>
+            <th>Tipo</th>
             <th>Fecha Vencimiento</th>
-            <th>Días Restantes</th>
-            <th>Estado</th>
+            <th>Detalle Clave</th>
           </tr>
         </thead>
-        <tbody id="tabla-vencimientos">
-          </tbody>
+        <tbody id="vencimientos-proximos-body"></tbody>
       </table>
-    </div>
+      <div id="dashboard-empty" style="display:none; text-align:center; padding: 20px; border: 1px dashed; border-radius: 5px;">
+        <p>✅ ¡Todo al día! No hay vencimientos en los próximos 30 días.</p>
+      </div>
+    </article>
 
-    <script>
-      // Cuando la página cargue, llama a la función del servidor
-      document.addEventListener("DOMContentLoaded", function() {
-        google.script.run
-          .withSuccessHandler(mostrarVencimientos)
-          .withFailureHandler(mostrarError)
-          .getVencimientos();
+    <!-- Sección de Búsqueda de Propiedades -->
+    <article id="propiedades">
+      <header><strong>Buscar Propiedad</strong></header>
+      <div class="grid">
+        <input type="search" id="search-padron" placeholder="Ingrese el Padrón a buscar...">
+        <button id="search-button" onclick="searchProperty()">Buscar</button>
+      </div>
+      <div id="property-details-container" style="display:none;">
+         <h4 id="property-title"></h4>
+         <div id="property-data"></div>
+         <hr>
+         <h5>Vencimientos Asociados</h5>
+         <table role="grid">
+           <thead>
+             <tr>
+               <th>Tipo de Vencimiento</th>
+               <th>Fecha</th>
+               <th>Acciones</th>
+             </tr>
+           </thead>
+           <tbody id="property-vencimientos-body"></tbody>
+         </table>
+      </div>
+    </article>
+    
+    <!-- Modal para editar vencimientos -->
+    <dialog id="modal-edit-vencimiento">
+      <article>
+        <header>
+          <h5>Editar Vencimiento</h5>
+          <a href="#" aria-label="Close" class="close" onclick="closeModal('modal-edit-vencimiento')"></a>
+        </header>
+        <form id="form-edit-vencimiento">
+            <!-- Los campos del formulario se generarán dinámicamente aquí -->
+        </form>
+        <footer>
+          <button type="button" class="secondary" onclick="closeModal('modal-edit-vencimiento')">Cancelar</button>
+          <button type="submit" form="form-edit-vencimiento">Guardar Cambios</button>
+        </footer>
+      </article>
+    </dialog>
+
+  </main>
+
+  <script>
+    // =================================================================================
+    // --- CONFIGURACIÓN Y ESTADO GLOBAL ---
+    // =================================================================================
+    
+    // ❗️❗️❗️ PASO CRÍTICO: Pega aquí la URL de tu Aplicación Web de Apps Script ❗️❗️❗️
+    const API_URL = "URL_DE_TU_APPS_SCRIPT_AQUI"; 
+    
+    let VENCIMIENTO_DEFS = {};
+    let CURRENT_PADRON = null;
+
+    // Función central para comunicarse con la API
+    async function callApi(action, payload = {}) {
+      if (API_URL === "URL_DE_TU_APPS_SCRIPT_AQUI") {
+        throw new Error("Por favor, configura la URL de la API en la variable API_URL del script.");
+      }
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, payload }),
+        redirect: 'follow'
       });
 
-      function mostrarVencimientos(vencimientos) {
-        const tbody = document.getElementById('tabla-vencimientos');
-        const loader = document.getElementById('loader');
-        const container = document.getElementById('vencimientos-container');
-
-        if (vencimientos.length === 0) {
-          loader.innerText = "¡Todo al día! No hay vencimientos próximos. ✅";
-          return;
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        const result = await response.json();
+        if (result.status === 'error') {
+          throw new Error(result.message);
         }
+        return result.data;
+      } else {
+        // Handle non-JSON responses, which can happen with Apps Script redirects on first auth
+        const text = await response.text();
+        console.error("Respuesta inesperada (no-JSON):", text);
+        throw new Error("Se recibió una respuesta inesperada del servidor. Revisa la consola para más detalles.");
+      }
+    }
 
-        vencimientos.forEach(v => {
-          let fila = tbody.insertRow();
-          fila.insertCell().textContent = v.padron;
-          fila.insertCell().textContent = v.concepto;
-          fila.insertCell().textContent = v.propietario;
-          fila.insertCell().textContent = v.fecha;
-          fila.insertCell().textContent = v.dias_restantes;
+    // =================================================================================
+    // --- INICIALIZACIÓN Y LÓGICA DEL DASHBOARD ---
+    // =================================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDashboard();
+      
+      callApi('getVencimientoDefinitions')
+        .then(defs => { VENCIMIENTO_DEFS = defs; })
+        .catch(showError);
+      
+      document.getElementById('form-edit-vencimiento').addEventListener('submit', handleUpdateVencimiento);
+      document.getElementById('search-padron').addEventListener('keyup', (event) => {
+        if (event.key === 'Enter') {
+          searchProperty();
+        }
+      });
+    });
 
-          let celdaEstado = fila.insertCell();
-          celdaEstado.textContent = v.estado;
-          // Aplicamos un estilo diferente según el estado
-          if (v.estado.includes('Vencido')) {
-            celdaEstado.className = 'estado-vencido';
+    async function loadDashboard() {
+      const loader = document.getElementById('dashboard-loader');
+      try {
+        loader.style.display = 'block';
+        const vencimientos = await callApi('filterVencimientos', { daysAnticipation: 30, vencimientoTypeKey: 'Todos' });
+        displayUpcomingVencimientos(vencimientos);
+      } catch (error) {
+        showError(error);
+        loader.textContent = 'Error al cargar el dashboard.';
+      } finally {
+        loader.setAttribute('aria-busy', 'false');
+        if (loader.style.display !== 'none') loader.style.display = 'none';
+      }
+    }
+
+    function displayUpcomingVencimientos(vencimientos) {
+      const tableBody = document.getElementById('vencimientos-proximos-body');
+      const table = document.getElementById('vencimientos-proximos-table');
+      const emptyDiv = document.getElementById('dashboard-empty');
+      tableBody.innerHTML = '';
+
+      if (!vencimientos || vencimientos.length === 0) {
+        table.style.display = 'none';
+        emptyDiv.style.display = 'block';
+        return;
+      }
+      
+      vencimientos.forEach(v => {
+        const fechaKey = Object.keys(v).find(k => k.includes('fecha'));
+        const detalle = v.nro_tributo || v.tipo_de_reajuste || v.nro_saneamiento || 'N/A';
+        const row = `
+          <tr>
+            <td>${v.padron || 'N/A'}</td>
+            <td>${v.tipovencimiento || 'N/A'}</td>
+            <td>${v[fechaKey] ? new Date(v[fechaKey] + 'T00:00:00').toLocaleDateString('es-ES') : 'N/A'}</td>
+            <td>${detalle}</td>
+          </tr>`;
+        tableBody.innerHTML += row;
+      });
+
+      emptyDiv.style.display = 'none';
+      table.style.display = 'table';
+    }
+
+    // =================================================================================
+    // --- LÓGICA DE BÚSQUEDA Y DETALLES DE PROPIEDAD ---
+    // =================================================================================
+    async function searchProperty() {
+      const padron = document.getElementById('search-padron').value.trim();
+      CURRENT_PADRON = padron; // Guardamos el padrón actual
+      if (!padron) {
+        showError({ message: 'Por favor, ingrese un padrón.' });
+        return;
+      }
+      const button = document.getElementById('search-button');
+      button.setAttribute('aria-busy', 'true');
+      
+      try {
+        const result = await callApi('getPropertyAndVencimientos', { padron });
+        displayPropertyDetails(result);
+      } catch (error) {
+        showError(error);
+        document.getElementById('property-details-container').style.display = 'none';
+      } finally {
+        button.setAttribute('aria-busy', 'false');
+      }
+    }
+    
+    function displayPropertyDetails({ property, vencimientos }) {
+      const container = document.getElementById('property-details-container');
+      if (!property) {
+        showError({ message: 'No se encontró ninguna propiedad con ese padrón.' });
+        container.style.display = 'none';
+        return;
+      }
+      
+      document.getElementById('property-title').textContent = `Detalles de Padrón: ${property.padron}`;
+      const dataContainer = document.getElementById('property-data');
+      dataContainer.innerHTML = `<p><strong>Dirección:</strong> ${property.direccion || 'N/A'}<br><strong>Propietario:</strong> ${property.propietario || 'N/A'}</p>`;
+      
+      const vencBody = document.getElementById('property-vencimientos-body');
+      vencBody.innerHTML = '';
+      vencimientos.sort((a,b) => a._tipovencimiento.localeCompare(b._tipovencimiento)); // Orden alfabético
+
+      vencimientos.forEach(v => {
+        const fechaKey = Object.keys(v).find(k => k.includes('fecha'));
+        const row = `
+          <tr>
+            <td>${v._tipovencimiento}</td>
+            <td>${v[fechaKey] ? new Date(v[fechaKey] + 'T00:00:00').toLocaleDateString('es-ES') : 'Sin fecha'}</td>
+            <td><button class="outline" onclick="openEditModal(${v._rowindex}, '${v._tipovencimiento}')">Editar</button></td>
+          </tr>
+        `;
+        vencBody.innerHTML += row;
+      });
+      
+      container.style.display = 'block';
+    }
+
+    // =================================================================================
+    // --- LÓGICA DE MODALES Y FORMULARIOS ---
+    // =================================================================================
+    async function openEditModal(rowIndex, tipoVencimientoKey) {
+        const form = document.getElementById('form-edit-vencimiento');
+        form.innerHTML = '<p aria-busy="true">Cargando datos...</p>';
+        const modal = document.getElementById('modal-edit-vencimiento');
+        modal.showModal();
+        
+        try {
+            const vencimientoData = await callApi('getVencimientoDetails', { rowIndex, tipoVencimientoKey });
+            populateVencimientoForm(vencimientoData, tipoVencimientoKey, form);
+        } catch (error) {
+            showError(error);
+            closeModal('modal-edit-vencimiento');
+        }
+    }
+    
+    function populateVencimientoForm(data, tipoVencimientoKey, form) {
+      form.innerHTML = '';
+      const fields = VENCIMIENTO_DEFS[tipoVencimientoKey];
+      if (!fields) {
+          form.innerHTML = '<p>Error: No se encontraron definiciones para este tipo de vencimiento.</p>';
+          return;
+      }
+      
+      form.dataset.tipoVencimiento = tipoVencimientoKey;
+      form.dataset.rowIndex = data._rowindex;
+
+      fields.forEach(field => {
+          const value = data[field.key] || '';
+          const label = document.createElement('label');
+          label.textContent = field.label;
+          
+          let input;
+          if (field.type === 'textarea') {
+              input = document.createElement('textarea');
+              input.textContent = value;
+              input.rows = 3;
           } else {
-            celdaEstado.className = 'estado-proximo';
+              input = document.createElement('input');
+              input.type = field.type;
+              input.value = value;
           }
-        });
+          
+          input.name = field.key;
+          input.id = `edit-${field.id}`;
+          if (field.disabled) input.readOnly = true;
+          
+          label.appendChild(input);
+          form.appendChild(label);
+      });
+    }
 
-        // Ocultamos el loader y mostramos la tabla
-        loader.style.display = 'none';
-        container.style.visibility = 'visible';
-      }
+    async function handleUpdateVencimiento(event) {
+        event.preventDefault();
+        const form = event.target;
+        const tipoVencimientoKey = form.dataset.tipoVencimiento;
+        const submitButton = form.querySelector('button[type="submit"]');
+        
+        const data = { _rowindex: parseInt(form.dataset.rowIndex) };
+        const formData = new FormData(form);
+        for(let [key, value] of formData.entries()) { data[key] = value; }
 
-      function mostrarError(error) {
-        document.getElementById('loader').innerText = "Error al cargar los datos: " + error.message;
-      }
-    </script>
-  </body>
+        submitButton.setAttribute('aria-busy', 'true');
+        
+        try {
+            const response = await callApi('updateVencimiento', { vencimientoData: data, tipoVencimientoKey });
+            alert(response);
+            closeModal('modal-edit-vencimiento');
+            if (CURRENT_PADRON) {
+              document.getElementById('search-padron').value = CURRENT_PADRON;
+              searchProperty(); // Recargar datos de la propiedad actual
+            }
+            loadDashboard(); // Recargar el dashboard por si algo cambió
+        } catch (error) {
+            showError(error);
+        } finally {
+            submitButton.setAttribute('aria-busy', 'false');
+        }
+    }
+    
+    function closeModal(modalId) {
+      document.getElementById(modalId).close();
+    }
+
+    // =================================================================================
+    // --- UTILIDADES ---
+    // =================================================================================
+    function showError(error) {
+      console.error(error);
+      alert('Error: ' + error.message);
+    }
+
+  </script>
+</body>
 </html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      /* Estilos para que se vea bien */
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 20px; }
+      h1 { color: #333; text-align: center; }
+      #loader { text-align: center; font-size: 1.2em; color: #555; }
+      #vencimientos-container { visibility: hidden; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); }
+      th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+      thead { background-color: #007bff; color: white; }
+      tr:nth-child(even) { background-color: #f2f2f2; }
+      tr:hover { background-color: #e2eefd; }
+      .estado-vencido { font-weight: bold; color: #d9534f; }
+      .estado-proximo { font-weight: bold; color: #f0ad4e; }
+    </style>
+  </head>
+  <body>
+    <h1>Control de Próximos Vencimientos</h1>
+
+    <div id="loader">Cargando vencimientos... ⏳</div>
+
+    <div id="vencimientos-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Padrón</th>
+            <th>Concepto</th>
+            <th>Propietario</th>
+            <th>Fecha Vencimiento</th>
+            <th>Días Restantes</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-vencimientos">
+          </tbody>
+      </table>
+    </div>
+
+    <script>
+      // Cuando la página cargue, llama a la función del servidor
+      document.addEventListener("DOMContentLoaded", function() {
+        google.script.run
+          .withSuccessHandler(mostrarVencimientos)
+          .withFailureHandler(mostrarError)
+          .getVencimientos();
+      });
+
+      function mostrarVencimientos(vencimientos) {
+        const tbody = document.getElementById('tabla-vencimientos');
+        const loader = document.getElementById('loader');
+        const container = document.getElementById('vencimientos-container');
+
+        if (vencimientos.length === 0) {
+          loader.innerText = "¡Todo al día! No hay vencimientos próximos. ✅";
+          return;
+        }
+
+        vencimientos.forEach(v => {
+          let fila = tbody.insertRow();
+          fila.insertCell().textContent = v.padron;
+          fila.insertCell().textContent = v.concepto;
+          fila.insertCell().textContent = v.propietario;
+          fila.insertCell().textContent = v.fecha;
+          fila.insertCell().textContent = v.dias_restantes;
+
+          let celdaEstado = fila.insertCell();
+          celdaEstado.textContent = v.estado;
+          // Aplicamos un estilo diferente según el estado
+          if (v.estado.includes('Vencido')) {
+            celdaEstado.className = 'estado-vencido';
+          } else {
+            celdaEstado.className = 'estado-proximo';
+          }
+        });
+
+        // Ocultamos el loader y mostramos la tabla
+        loader.style.display = 'none';
+        container.style.visibility = 'visible';
+      }
+
+      function mostrarError(error) {
+        document.getElementById('loader').innerText = "Error al cargar los datos: " + error.message;
+      }
+    </script>
+  </body>
+</html>

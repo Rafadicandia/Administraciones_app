@@ -28,17 +28,17 @@
     button[aria-busy="true"] {
       pointer-events: none;
     }
-    /* --- CAMBIO: Estilos para la nueva lista de detalles de propiedad --- */
-    #property-data dl {
+    #property-data dl, #form-edit-property {
         display: grid;
         grid-template-columns: max-content auto;
         gap: 10px 20px;
+        align-items: center;
     }
-    #property-data dt {
+    #property-data dt, #form-edit-property label {
         font-weight: bold;
         grid-column: 1;
     }
-    #property-data dd {
+    #property-data dd, #form-edit-property input, #form-edit-property textarea {
         grid-column: 2;
         margin: 0;
     }
@@ -47,8 +47,9 @@
 <body>
   <main class="container">
     <header style="text-align: center; margin-bottom: 2rem;">
-      <h1>Gestor de Vencimientos</h1>
-      <p>Un panel central para el seguimiento de propiedades y sus vencimientos.</p>
+    
+      <img src="https://www.bienseguro.com.uy/assets/images/logo.svg" alt="Logo de Bien Seguro" style="max-width: 200px; margin: 1rem auto;">
+      <p>Panel central para el seguimiento de propiedades y sus vencimientos.</p>
     </header>
 
     <!-- Sección del Dashboard con Filtro de Fechas -->
@@ -72,10 +73,10 @@
         <thead>
           <tr>
             <th>Dirección</th>
-            <th>Padrón</th>
+            <th>Propietario</th>
             <th>Tipo</th>
             <th>Fecha Vencimiento</th>
-            <th>Detalle Clave</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody id="vencimientos-proximos-body"></tbody>
@@ -112,7 +113,7 @@
       </div>
     </article>
     
-    <!-- Modal para editar vencimientos -->
+    <!-- Modal para editar VENCIMIENTOS -->
     <dialog id="modal-edit-vencimiento">
       <article>
         <header>
@@ -127,10 +128,25 @@
       </article>
     </dialog>
 
+    <!-- Modal para ver/editar PROPIEDADES -->
+    <dialog id="modal-edit-property">
+      <article>
+        <header>
+          <h5 id="property-modal-title">Detalles de la Propiedad</h5>
+          <a href="#" aria-label="Close" class="close" onclick="closeModal('modal-edit-property')"></a>
+        </header>
+        <form id="form-edit-property"></form>
+        <footer>
+          <button type="button" class="secondary" onclick="closeModal('modal-edit-property')">Cerrar</button>
+          <button type="submit" form="form-edit-property">Guardar Cambios</button>
+        </footer>
+      </article>
+    </dialog>
+
   </main>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzDqbGh431XhzD9r8v6hY2yGNhhxCFSYnGWp5mFdtF8DtdeVBe7KLgWq1WGlmzFNyRFig/exec"; // ❗️❗️❗️ RECUERDA PEGAR TU URL AQUÍ ❗️❗️❗️
+    const API_URL = "https://script.google.com/macros/s/AKfycbz1YjoBUmSW-do2vbN6jg2NauSt8Fe0XC_9rCOv_u3d1VWNXLGEQfi_m5qCEniibU95/exec"; // ❗️❗️❗️ RECUERDA PEGAR TU URL AQUÍ ❗️❗️❗️
     let VENCIMIENTO_DEFS = {};
     let CURRENT_PADRON = null;
 
@@ -156,15 +172,14 @@
     }
 
     function formatDisplayDate(dateString) {
-      if (!dateString || isNaN(new Date(dateString))) {
-        return 'Sin fecha';
-      }
+      if (!dateString || isNaN(new Date(dateString))) { return 'Sin fecha'; }
       return new Date(dateString + 'T00:00:00').toLocaleDateString('es-ES');
     }
 
     document.addEventListener('DOMContentLoaded', () => {
       initializePage();
       document.getElementById('form-edit-vencimiento').addEventListener('submit', handleUpdateVencimiento);
+      document.getElementById('form-edit-property').addEventListener('submit', handleUpdateProperty);
     });
 
     function initializePage() {
@@ -209,11 +224,7 @@
       const loader = document.getElementById('dashboard-loader');
       const startDate = document.getElementById('start-date').value;
       const endDate = document.getElementById('end-date').value;
-
-      if (!startDate || !endDate) {
-        showError({ message: "Por favor, seleccione una fecha de inicio y de fin."});
-        return;
-      }
+      if (!startDate || !endDate) { return showError({ message: "Por favor, seleccione una fecha de inicio y de fin."}); }
       
       loader.style.display = 'block';
       document.getElementById('vencimientos-proximos-table').style.display = 'none';
@@ -248,13 +259,12 @@
         tableBody.innerHTML += `
           <tr>
             <td>${v.direccion || 'N/A'}</td>
-            <td>${v.padron || 'N/A'}</td>
+            <td>${v.propietario || 'N/A'}</td>
             <td>${v.tipovencimiento || 'N/A'}</td>
             <td>${formatDisplayDate(v[fechaKey])}</td>
-            <td>${detalle}</td>
+            <td><button class="outline" onclick="openPropertyModal('${v.padron}')">Ver Propiedad</button></td>
           </tr>`;
       });
-
       emptyDiv.style.display = 'none';
       table.style.display = 'table';
     }
@@ -262,10 +272,8 @@
     async function searchProperty() {
       const padron = document.getElementById('property-select').value;
       CURRENT_PADRON = padron;
-      if (!padron) {
-        showError({ message: 'Por favor, seleccione una propiedad del desplegable.' });
-        return;
-      }
+      if (!padron) { return showError({ message: 'Por favor, seleccione una propiedad del desplegable.' }); }
+      
       const button = document.getElementById('search-button');
       button.setAttribute('aria-busy', 'true');
       
@@ -280,7 +288,6 @@
       }
     }
     
-    // --- FUNCIÓN MODIFICADA ---
     function displayPropertyDetails({ property, vencimientos }) {
       const container = document.getElementById('property-details-container');
       if (!property || !property.padron) {
@@ -291,20 +298,11 @@
       
       document.getElementById('property-title').textContent = `Detalles de Padrón: ${property.padron}`;
       
-      // --- CAMBIO: Mostrar todos los datos de la propiedad dinámicamente ---
       const dataContainer = document.getElementById('property-data');
       dataContainer.innerHTML = ''; 
       const dl = document.createElement('dl');
-      
-      const propertyFieldOrder = [
-        { key: 'direccion', label: 'Dirección' },
-        { key: 'propietario', label: 'Propietario' },
-        { key: 'localidad', label: 'Localidad' },
-        { key: 'edificio', label: 'Edificio' },
-      ];
-
+      const propertyFieldOrder = [ { key: 'direccion', label: 'Dirección' }, { key: 'propietario', label: 'Propietario' }, { key: 'localidad', label: 'Localidad' }, { key: 'edificio', label: 'Edificio' } ];
       const displayedKeys = new Set();
-
       propertyFieldOrder.forEach(field => {
         if (property[field.key]) {
           const dt = document.createElement('dt');
@@ -316,11 +314,8 @@
           displayedKeys.add(field.key);
         }
       });
-      
       for (const [key, value] of Object.entries(property)) {
-        if (!value || displayedKeys.has(key) || key === '_rowindex' || key === 'padron' || key === 'vencimientos') {
-          continue;
-        }
+        if (!value || displayedKeys.has(key) || key === '_rowindex' || key === 'padron' || key === 'vencimientos') { continue; }
         const dt = document.createElement('dt');
         dt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         const dd = document.createElement('dd');
@@ -330,12 +325,9 @@
       }
       dataContainer.appendChild(dl);
 
-      // --- FIN DEL CAMBIO ---
-
       const vencBody = document.getElementById('property-vencimientos-body');
       vencBody.innerHTML = '';
       vencimientos.sort((a,b) => a._tipovencimiento.localeCompare(b._tipovencimiento));
-
       vencimientos.forEach(v => {
         const fechaKey = Object.keys(v).find(k => k.includes('fecha'));
         vencBody.innerHTML += `
@@ -347,7 +339,7 @@
       });
       container.style.display = 'block';
     }
-
+    
     async function openEditModal(rowIndex, tipoVencimientoKey) {
         const form = document.getElementById('form-edit-vencimiento');
         form.innerHTML = '<p aria-busy="true">Cargando datos...</p>';
@@ -370,7 +362,6 @@
       }
       form.dataset.tipoVencimiento = tipoVencimientoKey;
       form.dataset.rowIndex = data._rowindex;
-
       fields.forEach(field => {
           const value = data[field.key] || '';
           const label = document.createElement('label');
@@ -409,6 +400,79 @@
             closeModal('modal-edit-vencimiento');
             if (CURRENT_PADRON) searchProperty();
             handleFilterVencimientos();
+        } catch (error) {
+            showError(error);
+        } finally {
+            submitButton.setAttribute('aria-busy', 'false');
+        }
+    }
+
+    async function openPropertyModal(padron) {
+      if (!padron || padron === 'N/A') { return showError({ message: "No hay un padrón válido para esta entrada."}); }
+      const form = document.getElementById('form-edit-property');
+      const modal = document.getElementById('modal-edit-property');
+      const title = document.getElementById('property-modal-title');
+      
+      form.innerHTML = '<p aria-busy="true">Cargando datos de la propiedad...</p>';
+      title.textContent = 'Cargando...';
+      modal.showModal();
+      
+      try {
+          const { property } = await callApi('getPropertyAndVencimientos', { padron });
+          if (!property) throw new Error('No se pudo encontrar la propiedad.');
+          populatePropertyForm(property, form);
+          title.textContent = `Editando Propiedad - Padrón: ${property.padron}`;
+      } catch (error) {
+          showError(error);
+          closeModal('modal-edit-property');
+      }
+    }
+
+    function populatePropertyForm(data, form) {
+        form.innerHTML = '';
+        form.dataset.rowIndex = data._rowindex;
+        for (const [key, value] of Object.entries(data)) {
+            if (key === '_rowindex' || key === 'vencimientos') continue;
+            
+            const label = document.createElement('label');
+            label.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
+            let input;
+            // Usar un textarea para campos con texto largo como 'notas' o 'garantias'
+            if (key.includes('notas') || key.includes('garantias')) {
+                input = document.createElement('textarea');
+                input.textContent = value || '';
+                input.rows = 3;
+            } else {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.value = value || '';
+            }
+            
+            input.name = key;
+            if (key === 'padron') { input.readOnly = true; }
+            
+            form.appendChild(label);
+            form.appendChild(input);
+        }
+    }
+
+    async function handleUpdateProperty(event) {
+        event.preventDefault();
+        const form = event.target;
+        const submitButton = form.parentElement.querySelector('button[type="submit"]');
+        const data = { _rowindex: parseInt(form.dataset.rowIndex) };
+        const formData = new FormData(form);
+        for(let [key, value] of formData.entries()) { data[key] = value; }
+
+        submitButton.setAttribute('aria-busy', 'true');
+        try {
+            const response = await callApi('updateProperty', { propertyData: data });
+            alert(response);
+            closeModal('modal-edit-property');
+            // Recargar datos para que se reflejen los cambios en toda la app
+            handleFilterVencimientos();
+            populatePropertyDropdown();
         } catch (error) {
             showError(error);
         } finally {
